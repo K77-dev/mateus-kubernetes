@@ -9,5 +9,6 @@ spec:
   resources:
     requests:
       storage: 1Gi
-  storageClassName: "" # não associa a nenhum storageclass.
-  volumeName: example-pv
+  # storageClassName: "local-path-retain"
+  storageClassName: ""
+  volumeName: pvc-2f16702d-e9fa-405b-aa8f-2b6b70fd92b8
