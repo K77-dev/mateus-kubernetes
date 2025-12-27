@@ -3,7 +3,6 @@ kind: ConfigMap
 metadata:
   name: nginx-config
 data:
-  virtual_host: "vhost1.localhost.com"
   index.html: |
     <html>
       <h1>Opa! Chegou o novo html</h1>
@@ -60,3 +59,7 @@ spec:
         - name: config-index-html-vhost
           configMap:
             name: nginx-config 
+
+# /volume/
+#   ├── index.html      (arquivo)
+#   └── vhost.conf      (arquivo)

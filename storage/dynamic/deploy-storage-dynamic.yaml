@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: storage-dynamic
+  name: storage-dynamic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: storage-dynamic
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: storage-dynamic
+    spec:
+      containers:
+      - image: nginx
+        name: nginx
+        resources: {}
+        volumeMounts:
+          - name: data
+            mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: myclaim

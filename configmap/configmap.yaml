@@ -51,3 +51,7 @@ spec:
             items:
               - key: index.html
                 path: index.html
+
+# /volume/
+#   ├── virtual_host    (arquivo)
+#   ├── index.html      (arquivo)
