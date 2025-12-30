@@ -1,0 +1,129 @@
+Resumo
+Introdução ao RBAC
+RBAC é um termo comum no mundo de infraestrutura, que serve para dar permissão de acesso à recursos privados baseado em roles (funções). Por exemplo, DevOps tem acesso a X, enquanto Desenvolvedores tem acesso a Y.
+
+Isso vem muito de encontro com o princípio de least-privilege. Dar somente as permissões necessárias para quem realmente precisa, diminuindo os vetores de ataques.
+
+No Kubernetes, temos um sistema de RBAC para controlar as chamadas do API server. Isso é especialmente útil em dois cenários:
+
+Dar permissões para usuários finais que precisam de acesso ao nosso cluster Kubernetes (read-write? read-only?).
+
+Dar permissões para Service Accounts sendo usadas por outros pods dentro do cluster.
+
+CSR de usuário no Kubernetes
+O primeiro passo é criar uma CSR (Certificate Signing Request) localmente. Essa CSR será enviada para a CA do Kubernetes assinar e devolver o real certificado.
+
+openssl req -nodes \
+	  -days 365 \
+	  -newkey rsa:2048 \
+	  -keyout estagiario.key \
+	  -out estagiario.csr \
+	  -subj '/CN=estagiario/O=mateusmullerme' \
+	  -addext 'subjectAltName = DNS:estagiario.mateusmuller.me'
+A assinatura do certificado será realizada dentro do próprio cluster via YAML. Para isso vamos encodar a CSR.
+
+cat estagiario.csr| base64 -w 0
+E usar o seguinte padrão:
+
+apiVersion: certificates.k8s.io/v1
+kind: CertificateSigningRequest
+metadata:
+  name: estagiario-csr
+spec:
+  request: <csr aqui>
+  signerName: kubernetes.io/kube-apiserver-client
+  usages:
+  - client auth
+Note que estamos pedindo um certificado do tipo client para autenticação com o cluster. Vou deixar algumas referências oficiais sobre isso aqui:
+
+Authenticating
+
+Certificates and Certificate Signing Requests
+
+Manage TLS Certificates in a Cluster
+
+Agora vamos aprovar a CSR, pegar o certificado e analisar o conteúdo.
+
+kubectl certificate approve estagiario-csr
+kubectl get csr estagiario-csr -ojson |\
+		jq -r .status.certificate |\
+		base64 -d > estagiario.crt
+openssl x509 -in estagiario.crt -text
+Note que foi assinado pela CA “CN = kubernetes”. Este certificado está pronto para ser usado no processo de autenticação.
+
+Configurando usuário no kubectl context
+Para configurarmos a autenticação do kubectl, precisamos editar o famoso kubeconfig. Ao invés de fazer isso “na munheca”, vamos usar o próprio kubectl que não tem erro.
+
+$ kubectl config set-credentials estagiario \
+		--client-certificate estagiario.crt \
+		--client-key estagiario.key
+	
+$ kubectl config set-context estagiario \
+		--cluster kind-kind \
+		--user estagiario
+ 
+$ kubectl config use-context estagiario
+ 
+$ kubectl get pods
+Provavelmente você vai receber um erro parecido com este aqui:
+
+Error from server (Forbidden): pods is forbidden: User "estagiario" cannot list resource "pods" in API group "" in the namespace "default"
+Note que a autenticação já está funcionando. O Kubernetes identificou o nome do usuário baseado no CN do certificado e até mostrou na mensagem de erro!
+
+A jogada agora é fazer o RBAC deste mesmo usuário.
+
+ClusterRole e ClusterRoleBinding
+Aqui você pode ver as RBACs que já vem em todos os clusters, default do Kubernetes mesmo.
+
+Using RBAC Authorization
+
+Existe uma ClusterRole muito interessante para os nossos estagiários: view. Pode ver as informações do cluster, mas não pode modificar (para evitar maiores problemas rsrs).
+
+Bastaria a gente criar um binding mais ou menos assim:
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: estagiario-ro
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+- kind: User
+  name: estagiario
+  apiGroup: rbac.authorization.k8s.io
+E problema resolvido! 🙂
+
+Role, RoleBinding e ServiceAccounts
+Se você precisar liberar acesso aos recursos de namespace, use Role. Se o recurso for cluster-wide, use ClusterRole. Basicamente essa é a regra.
+
+Podemos iniciar um pod com kubectl para testar isso.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    run: kubectl
+  name: kubectl
+spec:
+  serviceAccountName: kubectl
+  containers:
+  - image: bitnami/kubectl
+    name: kubectl
+    command:
+      - sleep
+      - "999999999999999"
+Kubernetes API Concepts
+
+Quando você executar alguma ação com kubectl, uma mensagem de erro será mostrada no terminal informando exatamente qual chamada você está fazendo e para qual objeto. Com isso, basta adicionar na Role para dar acesso.
+
+Isso é interessante porque você apenas dá acesso aos recursos que a aplicação precisa e nada mais. O famoso princípio de least privilege.
+
+Você sempre cria a Role e RoleBinding na namespace onde o recurso que você quer dar acesso está localizado. Já a ServiceAccount pode estar localizada em outra namespace.
+
+A lógica das chamadas segue a mesma entre Role e ClusterRole.
+
+A diferença é que a Role se aplica para recursos namespaced. Você pode filtrar todos com o seguinte comando:
+
+$ kubectl api-resources --namespaced

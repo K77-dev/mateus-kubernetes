@@ -1,0 +1,193 @@
+Resumo
+Teoria: HPA, kube-controller e metrics APIs
+Os comportamentos default do HPA são controlados pelo kube-controller. Você pode filtrar por --horizontal-pod-autoscaler.
+
+kube-controller-manager
+
+per-pod resource metrics → A forma default calculando a média do uso dos recursos de compute do pod como um todo (mesmo tendo mais de um container).
+
+per-pod custom metrics → Pode ser integrado com Prometheus para uso de outras métricas.
+
+Essas são as APIs utilizadas pelo HPA:
+
+metrics.k8s.io → A principal, implementada pelo metrics-server.
+
+custom.metrics.k8s.io
+
+external.metrics.k8s.io
+
+Ou seja, é necessário fazer o deploy do metrics-server:
+
+GitHub - kubernetes-sigs/metrics-server: Scalable and efficient source of container resource metrics for Kubernetes built-in autoscaling pipelines.
+
+HPA na prática
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nginx-hpa
+spec:
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageUtilization: 60
+        type: Utilization
+    type: Resource
+  minReplicas: 1
+	maxReplicas: 100
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nginx
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx
+  name: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - image: nginx
+        name: nginx
+        resources:
+          requests:
+            cpu: 10m
+          limits:
+            cpu: 100m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: nginx
+  name: nginx
+spec:
+  ports:
+  - port: 80
+  selector:
+    app: nginx
+  type: ClusterIP
+Simulando scaling e entendendo o algoritmo
+Existe um algoritmo que é usado para definir se será escalado ou não. Por exemplo:
+
+desiredReplicas = ceil[currentReplicas * ( currentMetricValue / desiredMetricValue )]
+Primeiro vamos entender a função de ceil.
+
+💡 The ceil() function computes the smallest integer that is greater than or equal to x.
+
+Partindo do princípio que X seja 10.2, o valor será 11.
+
+currentReplicas é, obviamente, o número de replicas atual do deployment.
+
+currentMetricValue é a relação do uso atual em comparação aos limites definidos no requests dentro do resources.
+
+desiredMetricValue é o ponto de escala que foi definido. No nosso exemplo foi 60%.
+
+Vamos simular um cenário…
+
+Nosso requests é de 10m (10 millicpus).
+
+Rodando requisições em loop, o consumo do pod vai para 63m.
+
+Com uma regra de 3… (100*63)/10 = 630%.
+
+Aí é só aplicar a formula… ceil[ 1 * ( 630 / 60 ) ] = 11
+
+O deployment vai ser escalado para ~11 replicas.
+
+Para simular…
+
+$ kubectl run -it --image alpine demo sh
+
+# apk add curl
+
+# while true; do curl <svc>; done
+
+Stabilization Window
+Usado para evitar que os pods flutuem demais escalando e “deescalando”. Por default, depois que o pod escalar, vai demorar mais ou menos 5 minutos para estabilizar a janela, até que então parte deles possa ser deescalado.
+
+É possível alterar a janela default no kube-controller ou sobrescrever o valor no deployment.
+
+Horizontal Pod Autoscaling
+
+Default values
+
+Esses são os valores para o HPA caso não sejam modificados:
+
+behavior:
+  scaleDown:
+    stabilizationWindowSeconds: 300
+    policies:
+    - type: Percent
+      value: 100
+      periodSeconds: 15
+  scaleUp:
+    stabilizationWindowSeconds: 0
+    policies:
+    - type: Percent
+      value: 100
+      periodSeconds: 15
+    - type: Pods
+      value: 4
+      periodSeconds: 15
+    selectPolicy: Max
+Isso significa que…
+
+Após a stabilization window, o deployment pode ser deescalado em 100% após o periodo de 15s.
+
+Não há stabilization window para escalar.
+
+Deve escalar de 4 em 4 pods a cada 15s. Então se no exemplo o número de replicas era 11, ele faria 1 → 5 → 15s → 9 → 15s → 11.
+
+Ou, vai escalar 100% dos pods atuais em 15s (se tiver 1, escala somente 1).
+
+Alterar comportamento do scale down
+
+behavior:
+  scaleDown:
+    policies:
+    - type: Percent
+      value: 10
+      periodSeconds: 60
+Introdução e Deploy do VPA
+autoscaler/vertical-pod-autoscaler at master · kubernetes/autoscaler
+
+O deploy do VPA é bem simples:
+
+$ git clone https://github.com/kubernetes/autoscaler
+$ git checkout <tag>
+$ cd autoscaler/vertical-pod-autoscaler
+$ ./hack/vpa-up.sh
+Você verá 3 componentes: admission, updater e recommender (mais sobre a arquitetura aqui).
+
+admission → Recebe os hooks quando um pod é criado e faz o patch nos request/limits.
+
+updater → Atualiza os pods em tempo real fazendo o evicting.
+
+recommender → Verifica a utilização de recursos e atualiza os VPAs.
+
+Simulando scaling do VPA
+Para entender bem, vamos aplicar o exemplo.
+
+$ kubectl apply -f autoscaler/vertical-pod-autoscaler/examples/hamster.yaml
+$ kubectl get po -w
+$ kubectl get vpa -w
+$ kubectl describe vpa <vpa>
+O segredo por trás do VPA é: tanto o deployment quanto replicaset não serão editados.
+
+No momento que um pod é criado, há um mutatingwebhook que envia para o admission-controller, e então ocorre a mudança dos requests.
+
+$ kubectl get mutatingwebhookconfigurations -A
+$ kubectl get endpoints -n kube-system vpa-webhook
+$ kubectl logs -n kube-system <admission pod> -f
+E mesmo após a criação do pod, ele será atualizado por meio do updater.

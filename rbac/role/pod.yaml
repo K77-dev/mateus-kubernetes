@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kubectl
+spec:
+  serviceAccountName: kubectl
+  containers:
+  - name: kubectl
+    image: bitnami/kubectl
+    command:
+      - sleep
+      - "9999999999999999"
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"

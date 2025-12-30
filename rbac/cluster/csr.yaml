@@ -1,0 +1,36 @@
+apiVersion: certificates.k8s.io/v1
+kind: CertificateSigningRequest
+metadata:
+  name: estagiario-csr
+spec:
+  request: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURSBSRVFVRVNULS0tLS0KTUlJQ25qQ0NBWVlDQVFBd0pqRVRNQkVHQTFVRUF3d0taWE4wWVdkcFlYSnBiekVQTUEwR0ExVUVDZ3dHYTJWcwpjMlZ1TUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUFyWEE3NHJMV2RaeHphblRFClhoRG95NXlxbnNzZkVtbE5SYkJFaE43VjBqWVdkak5hWjdDeDZyaHFSM3g2WnB6TVYyNFR2dGZtRUg0SmcvTVMKcEgvZHBRbXFOa3ZSQWswMVFvbFdaTFZPeS9CakhhS01kTGRWaXdyUEk3ZHJnNUR3L3ZLUlUvVlRqYXpTVkUwWApVNGcrM3d2a0IvaVJ5TGtwN2dPSDJIREtTM2xGS1JjVFVjbWppRWVnN3JYYmtpSVpNL1hXLzJQVFN2enI0YURkCkRJNE45OFdsOEZzdmJWRXpJb3VYNlhMVm5iSk80RnhEcS9iL1lpd3NzMGdQV3BPNlY5aDRVbWQ5TlVnNGZkem8KSTZtd0RPSG1TYnRWVXNBb1hycit1a2VmclcyNUlhLzRUUzJONTRCcjhkODJHdTIrVm0wbitzbDAxZkZMRGlEaQpBTld3bndJREFRQUJvRE13TVFZSktvWklodmNOQVFrT01TUXdJakFnQmdOVkhSRUVHVEFYZ2hWbGMzUmhaMmxoCmNtbHZMbXRsYkhObGJpNWpiMjB3RFFZSktvWklodmNOQVFFTEJRQURnZ0VCQUg3WHVORUhtQnk3elZ4MVZMdnAKZHFsYXc3WkZWSFF5bjRSeVNhNldRSjNqS0FBL2tBODdibGVxdXBtZkg2TVBSMWoyK2I1VWkxa1JsVDVDeDNMRAo5YUIzQU51eXdVeEpseGdDaFdZa3VRNTBKTDBZWDloeXkxbVZ6SU5oZit3bWxBQlZXamlscHNSNUgySGhBcnZ2CmNvZEpMOGUzUXhLL2tHMnI4d2pCYTRtY2tPNUJtTnBGM3BtS2tLcVQrbVZJZExjdlV0UVBTRHdDVGZpL3ZmaUUKUmoyQzBZT1FJZHBleHJ4aXJ1eGorUWsxRWdPUWpyU05JWExPTDdYTjFwWVJlbStaTTdtcno3ZlZlUnZocFdaYwoxZGNDbDhXb0lwNTBvWkRVMWRKSC90eDBMY0xoTXFab2xLSitxMFE3clVGNlNzZ0JlYkdtNDIwQzdHRHRIV0lLCkl0TT0KLS0tLS1FTkQgQ0VSVElGSUNBVEUgUkVRVUVTVC0tLS0tCg==
+  signerName: kubernetes.io/kube-apiserver-client
+  usages:
+    - client auth
+
+# criação do certificado do estagiário
+#openssl req -nodes \
+#    -days 365 \
+#    -newkey rsa:2048 \
+#    -keyout estagiario.key \
+#    -out estagiario.csr \
+#    -subj '/CN=estagiario/O=kelsen' \
+#    -addext 'subjectAltName = DNS:estagiario.kelsen.com'
+
+# comando para internalizar o csr sem quebra de linha
+# cat estagiario.csr | base64 -w 0
+
+# apos o apply do certificado o mesmo deve ser aprovado pelo adm do cluster
+# k certificate approve estagiario-csr
+
+# comando para verificar se o certificado é válido com openssl
+# k get csr estagiario-csr -ojson | jq -r '.status.certificate' | base64 -d | openssl x509 -text
+
+# comando para gerar o cert
+# k get csr estagiario-csr -ojson | jq -r '.status.certificate' | base64 -d > estagiario.cert
+
+# comando para adicionar o credenciar o novo usuário (estagiário)
+# k config set-credentials estagiario --client-certificate $(pwd)/estagiario.cert --client-key /Users/kelsen/Documents/developer/cursos-online/kubernetes/matheus/rbac/estagiario.key
+
+# comando para atribuir o usuário ao contexto
+# k config set-contextk config set-context estagiario --cluster cluster.local --namespace default --user estagiario
