@@ -1,0 +1,84 @@
+Resumo
+kubent: APIs deprecadas
+O primeiro passo na minha visão, além de planejar como será o upgrade:
+
+console do cloud provider
+
+kubespray (automatizado)
+
+manual com kubeadm ou algo do gênero
+
+blue-green? canary?
+
+Isso tudo depende da criticidade, como o ambiente funciona, o que está rodando ali e outros fatores.
+
+Além disso, precisamos identificar quais as APIs que foram deprecadas, e consequentemente serão removidas. Com isso, os manifestos aplicados, ou que forem aplicados, não funcionarão mais.
+
+Aqui você consegue mais informações sobre isso:
+
+Deprecated API Migration Guide
+
+Mas claro que ainda assim podemos ter erros humanos, e é aqui onde entra o kubent.
+
+GitHub - doitintl/kube-no-trouble: Easily check your clusters for use of deprecated APIs
+
+Basicamente ele vai verificar os recursos aplicados no seu cluster, e cuspir na tela quais devem ser editados e porque, para que após o upgrade nada pare de funcionar.
+
+Imagina que você está na versão 1.24 e quer ir para a versão 1.25.
+
+$ kubent -t 1.25
+ 
+__________________________________________________________________________________________
+>>> Deprecated APIs removed in 1.25 <<<
+------------------------------------------------------------------------------------------
+KIND      NAMESPACE   NAME      API_VERSION     REPLACE_WITH (SINCE)
+CronJob   default     hello     batch/v1beta1   batch/v1 (1.21.0)
+Discussão sobre Upgrade
+Existem várias formas de upgrade… Por exemplo no meu homelab, criado e gerenciado com kubespray, eu provavelmente faria algo seguindo esta documentação:
+
+https://github.com/kubernetes-sigs/kubespray/blob/master/docs/upgrades.md
+
+Porque é um processo homologado e automatizado. A dor de cabeça tende a ser bem menor.
+
+Se o cluster estive rodando em algum cloud provider, como por exemplo a AWS, já tem um processo gerenciado pela AWS para isso.
+
+Updating an Amazon EKS cluster Kubernetes version - Amazon EKS
+
+Upgrade do Control Plane
+Partindo do princípio que forma feitos todos os back-ups e medidas de disaster-recovery, vamos ao upgrade.
+
+Precisamos configurar os pacotes da próxima versão. Então se o Kubernetes está na 1.24, vamos para a 1.25 (sempre pulamos apenas 1 minor version, nunca mais).
+
+Installing kubeadm
+
+Configure o repositório apt, atualize o cache e se prepare para instalar os pacotes da próxima versão.
+
+curl -fsSL <https://pkgs.k8s.io/core:/stable:/v1.25/deb/Release.key> | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring-1.25.gpg
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] <https://pkgs.k8s.io/core:/stable:/v1.25/deb/> /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+apt update
+apt list -a kubeadm
+Com isso você deve ver todos os patches da nova minor. Os pacotes do Kubernetes são colocados on-hold para evitar upgrade ao atualizar o SO. Então vamos libera-los para o upgrade. A ideia é começar pelo kubeadm que controla as versões, e depois o kubectl e kubelet que são dependências.
+
+apt-mark unhold kubeadm
+apt install kubeadm
+apt-mark hold kubeadm
+kubeadm upgrade plan
+Caso o plan tenha sucedido, basta prosseguir aplicando o upgrade efetivamente.
+
+kubeadm upgrade apply v1.25.14
+kubectl drain k8s-master-1 --ignore-daemonsets
+apt-mark unhold kubectl kubelet
+apt install kubectl kubelet -y
+apt-mark hold kubectl kubelet
+systemctl daemon-reload
+systemctl restart kubelet
+kubectl uncordon k8s-master-1
+kubectl get nodes
+Upgrade do Worker
+Upgrading kubeadm clusters
+
+O upgrade dos nodes é praticamente a mesma coisa, mas deve ser feito somente após o upgrade do control plane.
+
+A diferença está após o upgrade do binário do kubeadm.
+
+kubeadm upgrade node

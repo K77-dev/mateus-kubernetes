@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx
+  name: nginx
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      tolerations:
+        - key: teste-taint
+          operator: Equal
+          value: backend
+          effect: NoSchedule
+      containers:
+      - image: nginx
+        name: nginx
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "250m"
+            memory: "256Mi"
+
+
+# cria o taint
+# k taint node wn02 nodeGroup=backend:NoSchedule
+
+# deleta o taint
+# k taint node wn02 nodeGroup=backend:NoSchedule-

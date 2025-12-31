@@ -1,0 +1,154 @@
+Resumo
+Node Selector
+Node Selector é a forma mais simples de scheduling, mas também a mais “limitada” de certa forma. A ideia é extremamente simples: Colocar o pod em nodes com uma label XYZ.
+
+Isso é interessante para colocar workloads específicos em nodes específicos… CPU-bound? memory-bound? GPU (Machine Learning)?
+
+Basta no nível do pod adicionar o seguinte:
+
+nodeSelector:
+    kubernetes.io/hostname: k8s-worker-3
+Qual o problema do nodeSelector? Ele é uma hard constraint. Se por falta de recursos ele não conseguir schedular no node, o pod ficará em Pending, o que sinceramente não é o que queremos no dia a dia.
+
+Seria melhor se tivessemos algo como faça isso, mas se não der, não deixe de schedular o pod.
+
+Node Affinity
+O Node Affinity é um Node Selector com muito mais robustez. Prefira sempre usar ele do que usar o Node Selector.
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values:
+          - antarctica-east1
+          - antarctica-west1
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 1
+      preference:
+        matchExpressions:
+        - key: another-node-label-key
+          operator: In
+          values:
+          - another-node-label-value
+O requiredDuringSchedulingIgnoredDuringExecution é basicamente a mesma coisa que o Node Selector, pois caso não seja acomodado, o pod ficará em Pending.
+
+A diferença é o preferredDuringSchedulingIgnoredDuringExecution, onde o scheduler vai tentar seguir a sua constraint, e caso que não seja possível, ele ainda assim vai schedular o pod.
+
+Pod Affinity e Antiaffinity
+Temos outro recurso bastante similar ao NodeAffintity, mas em nível de pod. Com isso podemos criar regras do tipo… “Coloque o pod X no mesmo node onde o pod Y está rodando”.
+
+O mesmo segue para o inverso negando a regra citada acima.
+
+Isso é interessante para casos onde a latência é algo crítico para a aplicação, então você pode colocar dois pods no mesmo node. Quando o pod A chamar o pod B, a latência será mínima porque estarão no mesmo node.
+
+Por exemplo, colocar o pod de backend no mesmo node onde está a database para diminuir a latência de comunicação:
+
+affinity:
+  podAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - database
+        topologyKey: "kubernetes.io/hostname"
+Isso não um caso daqueles “one fits all”. Tudo deve ser analisado conforme os requisitos, prós e cons.
+
+Pod Topology Spread Constraints
+Este é um recurso muito interessante para controlar como os pods de um determinado workload são distribuídos dentro de uma(s) failure-domains, como por exemplo: nodes, zonas de disponibilidade, regiões, etc.
+
+Isso pode garantir redução de custos, bem como uma maior disponibilidade da sua aplicação.
+
+Pod Topology Spread Constraints
+
+Então um exemplo de manifesto seria assim:
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx
+  name: nginx
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: nginx
+          matchLabelKeys:
+            - pod-template-hash
+      containers:
+      - image: nginx
+        name: nginx
+maxSkew → A diferença de pods entre as constraints deve ser de 1.
+
+topologyKey → Qual label vai ser utilizada para separar os pods.
+
+whenUnsatisfiable → Caso a regra não seja atendida, o que fazer?
+
+labelSelector → Qual label usar para atrelar pods do mesmo workload?
+
+matchLabelKeys → Qual a label complemetar a label assim (útil para o rolling update)
+
+Para que seus pods não fiquem no status de Pending, utilize o whenUnsatisfiable: ScheduleAnyway.  Nas palavras da própria documentação:
+
+if you select whenUnsatisfiable: ScheduleAnyway, the scheduler gives higher precedence to topologies that would help reduce the skew.
+
+Ou seja, o scheduler vai distribuir em diferentes Nodes mantendo a diferença de 1 pod (maxSkew 1).
+
+Taints & Tolerations
+Taint e Toleration é um recurso de scheduling extremamente elegante, e possivelmente o meu preferido. Com ele, podemos “proteger” os nodes de pods indesejados, onde somenete quem foi explicito poderá ser schedulado lá.
+
+Isso é uma estratégia interessante para segregar nodegroups (ex: frontend, backend, tools, etc). Podemos também ter ferramentas que necessitam de nodes dedicados, e essa estratégia também serve para isso.
+
+Não é comum adicionar um taint manualmente em um node (exceto pelo drain para modo de manutenção). O mais comum é que o node já seja registrado com um taint específico, usando a flag --register-with-taints.
+
+kubelet
+
+Para fins de testes podemos adicionar um taint manualmente:
+
+kubectl taint node comunidade-devops-worker nodegroup=backend:NoSchedule
+kubectl create deploy --image nginx --replicas 10 nginx
+Ao criar um deployment com vários pods, você vai notar que nenhum será schedulado no node com taint.
+
+Para que isso aconteça, você precisa adicionar uma toleration explícita no manifesto. Lembrando que a toleration não é um selector, ele somente vai permitir que seja schedulado nos nodes com taint.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx
+  name: nginx
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      tolerations:
+        - key: nodegroup
+          operator: Equal
+          value: backend
+          effect: NoSchedule
+      containers:
+      - image: nginx
+        name: nginx
