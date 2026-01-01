@@ -1,0 +1,28 @@
+Instalar o etcdctl no Control-Plane
+# apt install etcd-client
+
+Interagir sem ENV
+# ETCDCTL_API=3 etcdctl --cacert ca.crt --cert server.crt --key server.key member list --write-out table
+
+Configurando o etcdctl
+# cat <<EOF > etcdctl.env
+export ETCDCTL_CACERT=/etc/kubernetes/pki/etcd/ca.crt
+export ETCDCTL_CERT=/etc/kubernetes/pki/etcd/server.crt
+export ETCDCTL_KEY=/etc/kubernetes/pki/etcd/server.key
+export ETCDCTL_API=3
+EOF 
+# source etcdctl.env
+# etcdctl member list
+
+1. Criar etcdctl.env com as variáveis
+    export ETCDCTL_CACERT=/etc/kubernetes/pki/etcd/ca.crt
+    export ETCDCTL_CERT=/etc/kubernetes/pki/etcd/server.crt
+    export ETCDCTL_KEY=/etc/kubernetes/pki/etcd/server.key
+    export ETCDCTL_API=3
+2. # etcdctl member list
+
+Backup ETCD
+# root@cp01:/var/lib/etcd# etcdctl snapshot save etcd-snapshot.db
+
+Restore ETCD
+# root@cp01:/var/lib/etcd# etcdctl snapshot restore etcd-snapshot.db
