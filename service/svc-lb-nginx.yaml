@@ -1,3 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx
+  name: nginx
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - image: nginx
+          name: nginx
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -12,3 +41,27 @@ spec:
   selector:
     app: nginx
   type: LoadBalancer
+  internalTrafficPolicy: Local # faz com que a rota não saia de um node para outro
+  externalTrafficPolicy: Cluster
+
+# SEM internalTrafficPollicy
+# sudo iptables-save > iptables.bkp
+# grep '192.168.0.241' iptables.bkp # ip do service
+# grep KUBE-SVC-2CMXP7HKUVJN7L6M iptables.bkp
+# -A KUBE-SVC-2CMXP7HKUVJN7L6M ! -s 10.244.0.0/16 -d 10.97.251.45/32 -p tcp -m comment --comment "default/nginx cluster IP" -j KUBE-MARK-MASQ
+# -A KUBE-SVC-2CMXP7HKUVJN7L6M -m comment --comment "default/nginx -> 10.244.1.26:80" -m statistic --mode random --probability 0.25000000000 -j KUBE-SEP-GZB5BSWPSX3HDQFP
+# -A KUBE-SVC-2CMXP7HKUVJN7L6M -m comment --comment "default/nginx -> 10.244.1.27:80" -m statistic --mode random --probability 0.33333333349 -j KUBE-SEP-D7AGFVQ2AF5QNZNJ
+# -A KUBE-SVC-2CMXP7HKUVJN7L6M -m comment --comment "default/nginx -> 10.244.2.41:80" -m statistic --mode random --probability 0.50000000000 -j KUBE-SEP-B2L2R7NTQ3JZVRSC
+# -A KUBE-SVC-2CMXP7HKUVJN7L6M -m comment --comment "default/nginx -> 10.244.2.42:80" -j KUBE-SEP-O25SYE437ECQ24IO
+
+# COM internalTrafficPollicy Local
+# kelsen@wn01:~$ sudo iptables-save > iptables.bkp
+# kelsen@wn01:~$ grep '10.100.199.225' iptables.bkp
+# -A KUBE-SERVICES -d 10.100.199.225/32 -p tcp -m comment --comment "default/nginx cluster IP" -j KUBE-SVL-2CMXP7HKUVJN7L6M
+# -A KUBE-SVL-2CMXP7HKUVJN7L6M ! -s 10.244.0.0/16 -d 10.100.199.225/32 -p tcp -m comment --comment "default/nginx cluster IP" -j KUBE-MARK-MASQ
+# kelsen@wn01:~$ grep KUBE-SVL-2CMXP7HKUVJN7L6M iptables.bkp
+# :KUBE-SVL-2CMXP7HKUVJN7L6M - [0:0]
+# -A KUBE-SERVICES -d 10.100.199.225/32 -p tcp -m comment --comment "default/nginx cluster IP" -j KUBE-SVL-2CMXP7HKUVJN7L6M
+# -A KUBE-SVL-2CMXP7HKUVJN7L6M ! -s 10.244.0.0/16 -d 10.100.199.225/32 -p tcp -m comment --comment "default/nginx cluster IP" -j KUBE-MARK-MASQ
+# -A KUBE-SVL-2CMXP7HKUVJN7L6M -m comment --comment "default/nginx -> 10.244.1.32:80" -m statistic --mode random --probability 0.50000000000 -j KUBE-SEP-T6OGMVZCPDEP42C4
+# -A KUBE-SVL-2CMXP7HKUVJN7L6M -m comment --comment "default/nginx -> 10.244.1.33:80" -j KUBE-SEP-HTQUNJM4CWN7DF5X
